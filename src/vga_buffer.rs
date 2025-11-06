@@ -1,3 +1,4 @@
+// ‼️ This file has several changes ‼️
 use core::fmt;
 use lazy_static::lazy_static;
 use spin::Mutex;
@@ -9,6 +10,7 @@ lazy_static! {
     /// Used by the `print!` and `println!` macros.
     pub static ref WRITER: Mutex<Writer> = Mutex::new(Writer {
         column_position: 0,
+        row_position: 0, // ‼️ We now track the row, starting at 0 (the top) ‼️
         color_code: ColorCode::new(Color::Yellow, Color::Black),
         buffer: unsafe { &mut *(0xb8000 as *mut Buffer) },
     });
@@ -41,7 +43,6 @@ pub enum Color {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
 struct ColorCode(u8);
-
 impl ColorCode {
     /// Create a new `ColorCode` with the given foreground and background colors.
     fn new(foreground: Color, background: Color) -> ColorCode {
@@ -74,11 +75,35 @@ struct Buffer {
 /// `core::fmt::Write` trait.
 pub struct Writer {
     column_position: usize,
+    row_position: usize, // ‼️ ADDED ‼️
     color_code: ColorCode,
     buffer: &'static mut Buffer,
 }
-
 impl Writer {
+    /// ‼️ NEW METHOD ‼️
+    /// Clears the entire screen and resets the cursor to the top-left.
+    pub fn clear_screen(&mut self) {
+        for row in 0..BUFFER_HEIGHT {
+            self.clear_row(row);
+        }
+        self.row_position = 0;
+        self.column_position = 0;
+    }
+
+    /// ‼️ NEW METHOD ‼️
+    /// Shifts all lines one line up and clears the last row.
+    fn scroll_one_line(&mut self) {
+        for row in 1..BUFFER_HEIGHT {
+            for col in 0..BUFFER_WIDTH {
+                let character = self.buffer.chars[row][col].read();
+                self.buffer.chars[row - 1][col].write(character);
+            }
+        }
+        self.clear_row(BUFFER_HEIGHT - 1);
+        self.row_position = BUFFER_HEIGHT - 1; // ‼️ Set row to the new last line ‼️
+        self.column_position = 0;
+    }
+
     /// Writes an ASCII byte to the buffer.
     ///
     /// Wraps lines at `BUFFER_WIDTH`. Supports the `\n` newline character.
@@ -90,7 +115,13 @@ impl Writer {
                     self.new_line();
                 }
 
-                let row = BUFFER_HEIGHT - 1;
+                // ‼️ If we're at the bottom, scroll before writing ‼️
+                if self.row_position >= BUFFER_HEIGHT {
+                    self.scroll_one_line();
+                }
+
+                // ‼️ Use self.row_position instead of hardcoded last row ‼️
+                let row = self.row_position;
                 let col = self.column_position;
 
                 let color_code = self.color_code;
@@ -119,16 +150,16 @@ impl Writer {
         }
     }
 
-    /// Shifts all lines one line up and clears the last row.
+    /// ‼️ MODIFIED ‼️
+    /// Moves the cursor to the next line, scrolling if necessary.
     fn new_line(&mut self) {
-        for row in 1..BUFFER_HEIGHT {
-            for col in 0..BUFFER_WIDTH {
-                let character = self.buffer.chars[row][col].read();
-                self.buffer.chars[row - 1][col].write(character);
-            }
-        }
-        self.clear_row(BUFFER_HEIGHT - 1);
         self.column_position = 0;
+        self.row_position += 1; // ‼️ Just move to the next line ‼️
+
+        // ‼️ If we moved off-screen, scroll ‼️
+        if self.row_position >= BUFFER_HEIGHT {
+            self.scroll_one_line();
+        }
     }
 
     /// Clears a row by overwriting it with blank characters.
