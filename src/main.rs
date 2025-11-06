@@ -4,11 +4,13 @@
 use core::panic::PanicInfo;
 // ‼️ Import the WRITER static ‼️
 use crate::vga_buffer::WRITER;
+mod command;
 mod interrupts;
-mod vga_buffer;
+mod vga_buffer; // ‼️ ADD THIS MODULE ‼️
 #[unsafe(no_mangle)]
 pub extern "C" fn _start() -> ! {
-    // WRITER.lock().clear_screen();
+    // ‼️ Add this line to clear the screen first ‼️
+    WRITER.lock().clear_screen();
 
     println!("Hello World{}", "!");
     // Initialize the IDT and PICs
@@ -17,6 +19,10 @@ pub extern "C" fn _start() -> ! {
     // Enable hardware interrupts
     x86_64::instructions::interrupts::enable();
     println!("Keyboard input is enabled:");
+
+    // ‼️ PRINT THE FIRST PROMPT ‼️
+    print!("\n> ");
+
     loop {
         x86_64::instructions::hlt();
     }

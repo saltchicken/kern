@@ -1,3 +1,4 @@
+use crate::command;
 use crate::print;
 use crate::vga_buffer::WRITER;
 use lazy_static::lazy_static;
@@ -80,11 +81,20 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStac
     if let Ok(Some(key_event)) = keyboard.add_byte(scancode) {
         if let Some(key) = keyboard.process_keyevent(key_event) {
             match key {
+                DecodedKey::Unicode('\n') => {
+                    // Process the command and print a new prompt
+                    command::process_command();
+                    print!("\n> ");
+                }
                 DecodedKey::Unicode('\u{8}') => {
                     // Call our new backspace function
+                    command::remove_char();
                     WRITER.lock().backspace();
                 }
-                DecodedKey::Unicode(character) => print!("{}", character),
+                DecodedKey::Unicode(character) => {
+                    command::add_char(character as u8);
+                    print!("{}", character)
+                }
                 DecodedKey::RawKey(key) => print!("{:?}", key),
             }
         }
