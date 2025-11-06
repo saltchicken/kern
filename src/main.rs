@@ -8,8 +8,7 @@ mod interrupts;
 mod vga_buffer;
 #[unsafe(no_mangle)]
 pub extern "C" fn _start() -> ! {
-    // ‼️ Add this line to clear the screen first ‼️
-    WRITER.lock().clear_screen();
+    // WRITER.lock().clear_screen();
 
     println!("Hello World{}", "!");
     // Initialize the IDT and PICs
