@@ -116,29 +116,36 @@ impl Writer {
     }
 
     /// Handles a backspace character.
-    /// Moves the cursor back one, and overwrites the character with a space.
+    /// Moves the cursor back one, wrapping to the previous line if needed,
+    /// and overwrites the character with a space.
     pub fn backspace(&mut self) {
-        // Check if we are at the start of the line
         if self.column_position > 0 {
-            // Move the software cursor back
+            // We are not at the start of the line, just move back one
             self.column_position -= 1;
-
-            // Get the current position
-            let row = self.row_position;
-            let col = self.column_position;
-
-            // Overwrite the character at this position with a blank
-            let color_code = self.color_code;
-            self.buffer.chars[row][col].write(ScreenChar {
-                ascii_character: b' ', // write a space
-                color_code,
-            });
-
-            // Update the hardware cursor to the new position
-            self.update_hardware_cursor();
+        } else if self.row_position > 0 {
+            // We are at the start of a line (but not the first line),
+            // move to the end of the previous line.
+            self.row_position -= 1;
+            self.column_position = BUFFER_WIDTH - 1;
+        } else {
+            // We are at (0, 0), do nothing
+            return;
         }
-    }
 
+        // Get the new position
+        let row = self.row_position;
+        let col = self.column_position;
+
+        // Overwrite the character at this position with a blank
+        let color_code = self.color_code;
+        self.buffer.chars[row][col].write(ScreenChar {
+            ascii_character: b' ', // write a space
+            color_code,
+        });
+
+        // Update the hardware cursor to the new position
+        self.update_hardware_cursor();
+    }
     /// Writes an ASCII byte to the buffer.
     ///
     /// Wraps lines at `BUFFER_WIDTH`. Supports the `\n` newline character.
