@@ -1,20 +1,14 @@
-// ‼️ This file has several changes ‼️
 use core::fmt;
 use lazy_static::lazy_static;
 use spin::Mutex;
 use volatile::Volatile;
+// ‼️ Import Port for cursor control ‼️
+use x86_64::instructions::port::Port;
 
-lazy_static! {
-    /// A global `Writer` instance that can be used for printing to the VGA text buffer.
-    ///
-    /// Used by the `print!` and `println!` macros.
-    pub static ref WRITER: Mutex<Writer> = Mutex::new(Writer {
-        column_position: 0,
-        row_position: 0, // ‼️ We now track the row, starting at 0 (the top) ‼️
-        color_code: ColorCode::new(Color::Yellow, Color::Black),
-        buffer: unsafe { &mut *(0xb8000 as *mut Buffer) },
-    });
-}
+/// The height of the text buffer (normally 25 lines).
+const BUFFER_HEIGHT: usize = 25;
+/// The width of the text buffer (normally 80 columns).
+const BUFFER_WIDTH: usize = 80;
 
 /// The standard color palette in VGA text mode.
 #[allow(dead_code)]
@@ -58,11 +52,6 @@ struct ScreenChar {
     color_code: ColorCode,
 }
 
-/// The height of the text buffer (normally 25 lines).
-const BUFFER_HEIGHT: usize = 25;
-/// The width of the text buffer (normally 80 columns).
-const BUFFER_WIDTH: usize = 80;
-
 /// A structure representing the VGA text buffer.
 #[repr(transparent)]
 struct Buffer {
@@ -75,12 +64,33 @@ struct Buffer {
 /// `core::fmt::Write` trait.
 pub struct Writer {
     column_position: usize,
-    row_position: usize, // ‼️ ADDED ‼️
+    row_position: usize,
     color_code: ColorCode,
     buffer: &'static mut Buffer,
 }
+
 impl Writer {
-    /// ‼️ NEW METHOD ‼️
+    /// ‼️ NEW FUNCTION to move the hardware cursor ‼️
+    /// Updates the hardware cursor position to match the software cursor.
+    fn update_hardware_cursor(&self) {
+        let pos = self.row_position * BUFFER_WIDTH + self.column_position;
+
+        unsafe {
+            let mut control_port = Port::new(0x3D4);
+            let mut data_port = Port::new(0x3D5);
+
+            // Send "Cursor Location High" register index
+            control_port.write(14 as u8);
+            // Send high byte of position
+            data_port.write((pos >> 8) as u8);
+
+            // Send "Cursor Location Low" register index
+            control_port.write(15 as u8);
+            // Send low byte of position
+            data_port.write((pos & 0xFF) as u8);
+        }
+    }
+
     /// Clears the entire screen and resets the cursor to the top-left.
     pub fn clear_screen(&mut self) {
         for row in 0..BUFFER_HEIGHT {
@@ -88,9 +98,9 @@ impl Writer {
         }
         self.row_position = 0;
         self.column_position = 0;
+        self.update_hardware_cursor(); // ‼️ Update cursor ‼️
     }
 
-    /// ‼️ NEW METHOD ‼️
     /// Shifts all lines one line up and clears the last row.
     fn scroll_one_line(&mut self) {
         for row in 1..BUFFER_HEIGHT {
@@ -100,8 +110,9 @@ impl Writer {
             }
         }
         self.clear_row(BUFFER_HEIGHT - 1);
-        self.row_position = BUFFER_HEIGHT - 1; // ‼️ Set row to the new last line ‼️
+        self.row_position = BUFFER_HEIGHT - 1;
         self.column_position = 0;
+        self.update_hardware_cursor(); // ‼️ Update cursor ‼️
     }
 
     /// Writes an ASCII byte to the buffer.
@@ -115,12 +126,10 @@ impl Writer {
                     self.new_line();
                 }
 
-                // ‼️ If we're at the bottom, scroll before writing ‼️
                 if self.row_position >= BUFFER_HEIGHT {
                     self.scroll_one_line();
                 }
 
-                // ‼️ Use self.row_position instead of hardcoded last row ‼️
                 let row = self.row_position;
                 let col = self.column_position;
 
@@ -130,15 +139,12 @@ impl Writer {
                     color_code,
                 });
                 self.column_position += 1;
+                self.update_hardware_cursor(); // ‼️ Update cursor ‼️
             }
         }
     }
 
     /// Writes the given ASCII string to the buffer.
-    ///
-    /// Wraps lines at `BUFFER_WIDTH`. Supports the `\n` newline character. Does **not**
-    /// support strings with non-ASCII characters, since they can't be printed in the VGA text
-    /// mode.
     fn write_string(&mut self, s: &str) {
         for byte in s.bytes() {
             match byte {
@@ -150,15 +156,15 @@ impl Writer {
         }
     }
 
-    /// ‼️ MODIFIED ‼️
     /// Moves the cursor to the next line, scrolling if necessary.
     fn new_line(&mut self) {
         self.column_position = 0;
-        self.row_position += 1; // ‼️ Just move to the next line ‼️
+        self.row_position += 1;
 
-        // ‼️ If we moved off-screen, scroll ‼️
         if self.row_position >= BUFFER_HEIGHT {
-            self.scroll_one_line();
+            self.scroll_one_line(); // This will update the cursor
+        } else {
+            self.update_hardware_cursor(); // ‼️ Update cursor ‼️
         }
     }
 
@@ -179,6 +185,18 @@ impl fmt::Write for Writer {
         self.write_string(s);
         Ok(())
     }
+}
+
+lazy_static! {
+    /// A global `Writer` instance that can be used for printing to the VGA text buffer.
+    ///
+    /// Used by the `print!` and `println!` macros.
+    pub static ref WRITER: Mutex<Writer> = Mutex::new(Writer {
+        column_position: 0,
+        row_position: 0,
+        color_code: ColorCode::new(Color::Yellow, Color::Black),
+        buffer: unsafe { &mut *(0xb8000 as *mut Buffer) },
+    });
 }
 
 /// Like the `print!` macro in the standard library, but prints to the VGA text buffer.
