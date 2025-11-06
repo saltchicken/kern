@@ -11,7 +11,6 @@ mod vga_buffer; // ‼️ ADD THIS MODULE ‼️
 pub extern "C" fn _start() -> ! {
     // ‼️ Add this line to clear the screen first ‼️
     WRITER.lock().clear_screen();
-
     println!("Hello World{}", "!");
     // Initialize the IDT and PICs
     interrupts::init_idt();
@@ -20,8 +19,8 @@ pub extern "C" fn _start() -> ! {
     x86_64::instructions::interrupts::enable();
     println!("Keyboard input is enabled:");
 
-    // ‼️ PRINT THE FIRST PROMPT ‼️
-    print!("\n> ");
+    // ‼️ REMOVED the \n from here ‼️
+    print!("> ");
 
     loop {
         x86_64::instructions::hlt();

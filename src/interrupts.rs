@@ -84,7 +84,7 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStac
                 DecodedKey::Unicode('\n') => {
                     // Process the command and print a new prompt
                     command::process_command();
-                    print!("\n> ");
+                    print!("> ");
                 }
                 DecodedKey::Unicode('\u{8}') => {
                     // Call our new backspace function
