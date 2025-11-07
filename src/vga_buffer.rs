@@ -1,7 +1,7 @@
 use core::fmt;
+use core::ptr::{read_volatile, write_volatile};
 use lazy_static::lazy_static;
 use spin::Mutex;
-use volatile::Volatile;
 use x86_64::instructions::interrupts;
 use x86_64::instructions::port::Port;
 
@@ -52,12 +52,6 @@ struct ScreenChar {
     color_code: ColorCode,
 }
 
-/// A structure representing the VGA text buffer.
-#[repr(transparent)]
-struct Buffer {
-    chars: [[Volatile<ScreenChar>; BUFFER_WIDTH]; BUFFER_HEIGHT],
-}
-
 /// A writer type that allows writing ASCII bytes and strings to an underlying `Buffer`.
 ///
 /// Wraps lines at `BUFFER_WIDTH`. Supports newline characters and implements the
@@ -66,11 +60,12 @@ pub struct Writer {
     column_position: usize,
     row_position: usize,
     color_code: ColorCode,
-    buffer: &'static mut Buffer,
+    buffer: *mut ScreenChar,
 }
 
+unsafe impl Send for Writer {}
+
 impl Writer {
-    /// ‼️ NEW FUNCTION to move the hardware cursor ‼️
     /// Updates the hardware cursor position to match the software cursor.
     fn update_hardware_cursor(&self) {
         let pos = self.row_position * BUFFER_WIDTH + self.column_position;
@@ -98,21 +93,24 @@ impl Writer {
         }
         self.row_position = 0;
         self.column_position = 0;
-        self.update_hardware_cursor(); // ‼️ Update cursor ‼️
+        self.update_hardware_cursor();
     }
 
     /// Shifts all lines one line up and clears the last row.
     fn scroll_one_line(&mut self) {
         for row in 1..BUFFER_HEIGHT {
             for col in 0..BUFFER_WIDTH {
-                let character = self.buffer.chars[row][col].read();
-                self.buffer.chars[row - 1][col].write(character);
+                let offset = row * BUFFER_WIDTH + col;
+                let character = unsafe { read_volatile(self.buffer.add(offset)) };
+
+                let offset_new = (row - 1) * BUFFER_WIDTH + col;
+                unsafe { write_volatile(self.buffer.add(offset_new), character) };
             }
         }
         self.clear_row(BUFFER_HEIGHT - 1);
         self.row_position = BUFFER_HEIGHT - 1;
         self.column_position = 0;
-        self.update_hardware_cursor(); // ‼️ Update cursor ‼️
+        self.update_hardware_cursor();
     }
 
     /// Handles a backspace character.
@@ -132,16 +130,18 @@ impl Writer {
             return;
         }
 
-        // Get the new position
-        let row = self.row_position;
-        let col = self.column_position;
-
-        // Overwrite the character at this position with a blank
+        let offset = self.row_position * BUFFER_WIDTH + self.column_position;
         let color_code = self.color_code;
-        self.buffer.chars[row][col].write(ScreenChar {
-            ascii_character: b' ', // write a space
-            color_code,
-        });
+
+        unsafe {
+            write_volatile(
+                self.buffer.add(offset),
+                ScreenChar {
+                    ascii_character: b' ', // write a space
+                    color_code,
+                },
+            );
+        }
 
         // Update the hardware cursor to the new position
         self.update_hardware_cursor();
@@ -161,16 +161,21 @@ impl Writer {
                     self.scroll_one_line();
                 }
 
-                let row = self.row_position;
-                let col = self.column_position;
-
+                let offset = self.row_position * BUFFER_WIDTH + self.column_position;
                 let color_code = self.color_code;
-                self.buffer.chars[row][col].write(ScreenChar {
-                    ascii_character: byte,
-                    color_code,
-                });
+
+                unsafe {
+                    write_volatile(
+                        self.buffer.add(offset),
+                        ScreenChar {
+                            ascii_character: byte,
+                            color_code,
+                        },
+                    );
+                }
+
                 self.column_position += 1;
-                self.update_hardware_cursor(); // ‼️ Update cursor ‼️
+                self.update_hardware_cursor();
             }
         }
     }
@@ -195,7 +200,7 @@ impl Writer {
         if self.row_position >= BUFFER_HEIGHT {
             self.scroll_one_line(); // This will update the cursor
         } else {
-            self.update_hardware_cursor(); // ‼️ Update cursor ‼️
+            self.update_hardware_cursor();
         }
     }
 
@@ -206,7 +211,8 @@ impl Writer {
             color_code: self.color_code,
         };
         for col in 0..BUFFER_WIDTH {
-            self.buffer.chars[row][col].write(blank);
+            let offset = row * BUFFER_WIDTH + col;
+            unsafe { write_volatile(self.buffer.add(offset), blank) };
         }
     }
 }
@@ -226,7 +232,7 @@ lazy_static! {
         column_position: 0,
         row_position: 0,
         color_code: ColorCode::new(Color::Green, Color::Black),
-        buffer: unsafe { &mut *(0xb8000 as *mut Buffer) },
+        buffer: 0xb8000 as *mut ScreenChar,
     });
 }
 
