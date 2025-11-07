@@ -2,6 +2,7 @@ use crate::vga_buffer::WRITER;
 use crate::{print, println};
 use lazy_static::lazy_static;
 use spin::Mutex;
+use x86_64::instructions::interrupts;
 
 // Set the max command length (e.g., one line)
 const COMMAND_BUFFER_SIZE: usize = 80;
@@ -47,7 +48,9 @@ pub fn process_command() {
     // Convert to &str and process
     match core::str::from_utf8(command_slice) {
         Ok("clear") => {
-            WRITER.lock().clear_screen();
+            interrupts::without_interrupts(|| {
+                WRITER.lock().clear_screen();
+            });
         }
         Ok(cmd) => {
             // Print an "unknown command" message

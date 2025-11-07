@@ -14,7 +14,11 @@ pub extern "C" fn _start() -> ! {
     println!("Hello World{}", "!");
     // Initialize the IDT and PICs
     interrupts::init_idt();
-    unsafe { interrupts::PICS.lock().initialize() };
+
+    x86_64::instructions::interrupts::without_interrupts(|| {
+        unsafe { interrupts::PICS.lock().initialize() };
+    });
+
     // Enable hardware interrupts
     x86_64::instructions::interrupts::enable();
     println!("Keyboard input is enabled:");

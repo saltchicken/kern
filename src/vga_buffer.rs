@@ -2,7 +2,7 @@ use core::fmt;
 use lazy_static::lazy_static;
 use spin::Mutex;
 use volatile::Volatile;
-// ‼️ Import Port for cursor control ‼️
+use x86_64::instructions::interrupts;
 use x86_64::instructions::port::Port;
 
 /// The height of the text buffer (normally 25 lines).
@@ -247,5 +247,7 @@ macro_rules! println {
 #[doc(hidden)]
 pub fn _print(args: fmt::Arguments) {
     use core::fmt::Write;
-    WRITER.lock().write_fmt(args).unwrap();
+    interrupts::without_interrupts(|| {
+        WRITER.lock().write_fmt(args).unwrap();
+    });
 }
