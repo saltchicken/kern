@@ -1,5 +1,5 @@
 [package]
-name = "blog_os"
+name = "kern"
 version = "0.1.0"
 edition = "2024"
 
@@ -8,14 +8,8 @@ x86_64 = "0.15.2"
 pc-keyboard = "0.8.0"
 pic8259 = "0.11.0"
 
-bootloader = "0.9"
+bootloader = "0.9.33"
 spin = "0.10.0"
 [dependencies.lazy_static]
 version = "1.0"
 features = ["spin_no_std"]
-
-[[bin]]
-
-name = "blog_os"
-test = false
-bench = false
