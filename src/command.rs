@@ -41,20 +41,41 @@ pub fn remove_char() {
 /// Processes the current command in the buffer.
 pub fn process_command() {
     let mut buffer = COMMAND_BUFFER.lock();
+    if buffer.len == 0 {
+        buffer.len = 0; // Reset just in case
+        return;
+    }
 
     // Get a slice of the command
     let command_slice = &buffer.buffer[..buffer.len];
 
     // Convert to &str and process
     match core::str::from_utf8(command_slice) {
-        Ok("clear") => {
-            interrupts::without_interrupts(|| {
-                WRITER.lock().clear_screen();
-            });
-        }
-        Ok(cmd) => {
-            // Print an "unknown command" message
-            println!("\nUnknown command: \"{}\"", cmd);
+        Ok(command_str) => {
+            let mut args = command_str.split_whitespace();
+
+            if let Some(command) = args.next() {
+                match command {
+                    "clear" => {
+                        interrupts::without_interrupts(|| {
+                            WRITER.lock().clear_screen();
+                        });
+                    }
+                    "echo" => {
+                        print!("\n"); // Start on a new line
+                        for arg in args {
+                            print!("{} ", arg);
+                        }
+                    }
+                    // "panic" command to test your panic handler
+                    "panic" => {
+                        panic!("Manual panic test!");
+                    }
+                    _ => {
+                        println!("\nUnknown command: \"{}\"", command);
+                    }
+                }
+            }
         }
         Err(_) => {
             println!("\nError: Non-UTF8 command");
